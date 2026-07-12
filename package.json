@@ -4,8 +4,8 @@
   "description": "Lion Coin Mini App Backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js & node bot.js"
-  },
+  "start": "node server.js"
+},
   "keywords": [],
   "author": "",
   "license": "ISC",
