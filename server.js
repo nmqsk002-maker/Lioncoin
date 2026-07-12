@@ -285,28 +285,46 @@ app.post('/api/missions/checkin', async (req, res) => {
     }
 });
 
-// API 9: XÁC THỰC NHIỆM VỤ TELEGRAM - CHỐNG NHẬN TRÙNG TIỀN (DOUBLE CLAIM)
+// API 9: XÁC THỰC NHIỆM VỤ TELEGRAM - KIỂM TRA THÀNH VIÊN TRONG NHÓM REALTIME
 app.post('/api/missions/verify-telegram', async (req, res) => {
     const { telegramId } = req.body;
+    // Điền Username nhóm nhiệm vụ của bạn vào đây (Thêm dấu @ ở đầu)
+    const chatGroupId = "@baoappfreekonap"; 
+
     try {
         const user = await User.findOne({ telegramId });
-        if (!user) return res.status(404).json({ message: "Tài khoản không hợp lệ!" });
+        if (!user) return res.status(404).json({ message: "Không tìm thấy dữ liệu tài khoản UID này!" });
 
-        // Anti-Cheat: Kiểm tra xem trong mảng completedMissions ở Database đã có tên nhiệm vụ này chưa
+        // Chống gian lận: Kiểm tra xem nhiệm vụ này đã được khóa trong DB chưa
         if (user.completedMissions.includes('TELEGRAM_JOIN')) {
-            return res.status(400).json({ message: "Bạn đã nhận phần thưởng nhiệm vụ này từ trước rồi!" });
+            return res.status(400).json({ message: "Bạn đã hoàn thành và nhận thưởng nhiệm vụ này rồi!" });
         }
 
-        // Đạt điều kiện: Cộng thưởng, đẩy tên nhiệm vụ vào Database để khóa lại vĩnh viễn
+        // Gọi trực tiếp lên Telegram API ngầm thông qua Token Bot của bạn để check thành viên
+        const tgApiUrl = `https://telegram.org{process.env.BOT_TOKEN}/getChatMember?chat_id=${chatGroupId}&user_id=${telegramId}`;
+        const tgResponse = await axios.get(tgApiUrl);
+        const memberStatus = tgResponse.data.result.status;
+
+        // Các trạng thái được tính là đã tham gia: member, administrator, creator
+        const isJoined = ['member', 'administrator', 'creator'].includes(memberStatus);
+
+        if (!isJoined) {
+            return res.status(400).json({ message: "Xác thực thất bại! Bạn chưa tham gia vào nhóm Telegram của nhiệm vụ." });
+        }
+
+        // Đạt điều kiện: Tiến hành cộng xu, khóa nhiệm vụ vào DB vĩnh viễn
         user.lionBalance = parseFloat((user.lionBalance + 0.25).toFixed(6));
         user.completedMissions.push('TELEGRAM_JOIN');
         await user.save();
 
-        res.json({ message: "Xác thực hoàn tất! Nhận +0.25 LION khóa an toàn trong Database." });
+        res.json({ message: "Tuyệt vời! Hệ thống đã xác thực bạn đã ở trong nhóm. Nhận +0.25 LION thành công!" });
+
     } catch (error) {
-        res.status(500).json({ error: "Lỗi cổng kiểm tra nhiệm vụ!" });
+        console.error("Lỗi Telegram Bot API:", error.message);
+        return res.status(400).json({ message: "Bot chưa thể quét được UID của bạn. Hãy đảm bảo bạn đã nhấn /start chat với Bot trước khi làm nhiệm vụ!" });
     }
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 [Máy chủ bảo mật] Đang vận hành trực tuyến tại cổng: ${PORT}`));
